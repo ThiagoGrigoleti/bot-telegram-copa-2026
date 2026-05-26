@@ -1,0 +1,1 @@
+ALTER TABLE matches ALTER COLUMN competition TYPE VARCHAR(100);

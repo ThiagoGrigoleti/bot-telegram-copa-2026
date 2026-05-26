@@ -1,0 +1,187 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+CLAUDE.md
+railway.toml
+README.md
+src/betting/value_detector.py
+src/bolao/league.py
+src/bolao/scoring.py
+src/bot/bot.py
+src/bot/handlers/jogo.py
+src/bot/handlers/missao.py
+src/bot/handlers/palpite.py
+src/bot/handlers/ranking.py
+src/bot/handlers/start.py
+src/bot/scheduler.py
+src/dashboard/app.py
+src/data/collector.py
+src/data/odds_fetcher.py
+src/model/elo_engine.py
+src/model/feature_builder.py
+src/model/predictor.py
+src/model/trainer.py
+tests/test_elo.py
+tests/test_model.py
+tests/test_scoring.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="CLAUDE.md">
+# CLAUDE.md
+
+## Contexto de negócio
+Bot Telegram de predição Copa 2026. Monetização via CPA iGaming (Betano, Sportingbet, KTO).
+Usuários que convertem via link afiliado recebem flag `is_vip = TRUE` no banco.
+
+## Stack
+- python-telegram-bot v20 async
+- PostgreSQL no Railway (mesmo projeto do Classroom Bot)
+- APScheduler para jobs
+- football-data.org para dados de futebol
+- The Odds API para odds de mercado
+- Streamlit Cloud para dashboard público
+
+## Regras de código
+- Zero comentários no código
+- Todos os handlers do bot são async
+- Error handling robusto em toda I/O externa
+- Nunca hardcodar credenciais — tudo via variáveis de ambiente
+- Blocos completos sempre, sem trechos parciais
+</file>
+
+<file path="railway.toml">
+
+</file>
+
+<file path="src/betting/value_detector.py">
+
+</file>
+
+<file path="src/bolao/league.py">
+
+</file>
+
+<file path="src/bolao/scoring.py">
+
+</file>
+
+<file path="src/bot/bot.py">
+
+</file>
+
+<file path="src/bot/handlers/jogo.py">
+
+</file>
+
+<file path="src/bot/handlers/missao.py">
+
+</file>
+
+<file path="src/bot/handlers/palpite.py">
+
+</file>
+
+<file path="src/bot/handlers/ranking.py">
+
+</file>
+
+<file path="src/bot/handlers/start.py">
+
+</file>
+
+<file path="src/bot/scheduler.py">
+
+</file>
+
+<file path="src/dashboard/app.py">
+
+</file>
+
+<file path="src/data/collector.py">
+
+</file>
+
+<file path="src/data/odds_fetcher.py">
+
+</file>
+
+<file path="src/model/elo_engine.py">
+
+</file>
+
+<file path="src/model/feature_builder.py">
+
+</file>
+
+<file path="src/model/predictor.py">
+
+</file>
+
+<file path="src/model/trainer.py">
+
+</file>
+
+<file path="tests/test_elo.py">
+
+</file>
+
+<file path="tests/test_model.py">
+
+</file>
+
+<file path="tests/test_scoring.py">
+
+</file>
+
+<file path=".gitignore">
+.env
+</file>
+
+<file path="README.md">
+# Nome do Projeto
+</file>
+
+</files>
