@@ -1,12 +1,13 @@
 import logging
 
 import numpy as np
+from pathlib import Path
 from dotenv import load_dotenv
 
 from feature_builder import build_features_for_match
 from trainer import FEATURES, load_model
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
