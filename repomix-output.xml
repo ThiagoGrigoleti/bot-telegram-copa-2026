@@ -61,6 +61,7 @@ src/bot/handlers/missao.py
 src/bot/handlers/palpite.py
 src/bot/handlers/ranking.py
 src/bot/handlers/start.py
+src/bot/handlers/vip.py
 src/bot/scheduler.py
 src/dashboard/app.py
 src/data/archive/former_names.csv
@@ -87,7 +88,11 @@ This section contains the contents of the repository's files.
 {
   "permissions": {
     "allow": [
-      "Bash(Get-ChildItem *)"
+      "Bash(Get-ChildItem *)",
+      "WebSearch",
+      "WebFetch(domain:www.fifa.com)",
+      "WebFetch(domain:www.nbcsports.com)",
+      "WebFetch(domain:en.wikipedia.org)"
     ]
   }
 }
@@ -470,101 +475,6 @@ KTO_AFFILIATE_LINK=
 ---
 </file>
 
-<file path="db/init_db.py">
-import os
-import psycopg2
-from dotenv import load_dotenv
-
-load_dotenv()
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS teams (
-    id SERIAL PRIMARY KEY,
-    fifa_code VARCHAR(10) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    elo_rating FLOAT NOT NULL DEFAULT 1500.0,
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS matches (
-    id SERIAL PRIMARY KEY,
-    external_id VARCHAR(50) UNIQUE,
-    home_team_id INT REFERENCES teams(id),
-    away_team_id INT REFERENCES teams(id),
-    match_date TIMESTAMP NOT NULL,
-    stage VARCHAR(50),
-    home_score INT,
-    away_score INT,
-    status VARCHAR(20) DEFAULT 'SCHEDULED',
-    competition VARCHAR(100)
-);
-
-CREATE TABLE IF NOT EXISTS predictions (
-    id SERIAL PRIMARY KEY,
-    match_id INT REFERENCES matches(id),
-    prob_home FLOAT NOT NULL,
-    prob_draw FLOAT NOT NULL,
-    prob_away FLOAT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    telegram_id BIGINT UNIQUE NOT NULL,
-    username VARCHAR(100),
-    points INT DEFAULT 0,
-    is_vip BOOLEAN DEFAULT FALSE,
-    joined_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS guesses (
-    id SERIAL PRIMARY KEY,
-    user_id INT REFERENCES users(id),
-    match_id INT REFERENCES matches(id),
-    guessed_home_score INT NOT NULL,
-    guessed_away_score INT NOT NULL,
-    points_earned INT DEFAULT 0,
-    UNIQUE(user_id, match_id)
-);
-
-CREATE TABLE IF NOT EXISTS daily_missions (
-    id SERIAL PRIMARY KEY,
-    match_id INT REFERENCES matches(id),
-    question TEXT NOT NULL,
-    correct_answer TEXT,
-    bonus_points INT DEFAULT 5
-);
-
-CREATE TABLE IF NOT EXISTS mission_answers (
-    id SERIAL PRIMARY KEY,
-    user_id INT REFERENCES users(id),
-    mission_id INT REFERENCES daily_missions(id),
-    answer TEXT NOT NULL,
-    is_correct BOOLEAN,
-    UNIQUE(user_id, mission_id)
-);
-"""
-
-
-def init_db():
-    url = os.environ["DATABASE_URL"]
-    try:
-        conn = psycopg2.connect(url)
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute(SCHEMA)
-        cur.close()
-        conn.close()
-        print("✅ Schema criado")
-    except Exception as e:
-        print(f"❌ Erro: {e}")
-        raise
-
-
-if __name__ == "__main__":
-    init_db()
-</file>
-
 <file path="db/migrations/001_add_competition_column.sql">
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS competition VARCHAR(10);
 </file>
@@ -662,10 +572,6 @@ CREATE TABLE IF NOT EXISTS mission_answers (
 # Nome do Projeto
 </file>
 
-<file path="src/betting/value_detector.py">
-
-</file>
-
 <file path="src/bolao/league.py">
 
 </file>
@@ -674,28 +580,98 @@ CREATE TABLE IF NOT EXISTS mission_answers (
 
 </file>
 
-<file path="src/bot/bot.py">
-
-</file>
-
-<file path="src/bot/handlers/jogo.py">
-
-</file>
-
 <file path="src/bot/handlers/missao.py">
 
 </file>
 
-<file path="src/bot/handlers/palpite.py">
+<file path="src/bot/handlers/vip.py">
+import os
+import sys
+import logging
+from pathlib import Path
+import psycopg2
+from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import ContextTypes
 
-</file>
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "model"))
+from predictor import predict_match
 
-<file path="src/bot/handlers/ranking.py">
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
-</file>
+DB_URL = os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL")
+AFFILIATE_LINK = os.getenv("AFFILIATE_LINK")
 
-<file path="src/bot/handlers/start.py">
 
+async def vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    telegram_id = update.effective_user.id
+
+    try:
+        conn = psycopg2.connect(DB_URL)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT m.match_date, m.competition, m.stage,
+                       ht.name AS home_name, at.name AS away_name
+                FROM matches m
+                JOIN teams ht ON m.home_team_id = ht.id
+                JOIN teams at ON m.away_team_id = at.id
+                WHERE m.match_date > NOW()
+                  AND m.status = 'SCHEDULED'
+                ORDER BY m.match_date ASC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+
+            cur.execute(
+                "UPDATE users SET is_vip = TRUE WHERE telegram_id = %s",
+                (telegram_id,),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("DB error in /vip for telegram_id=%s", telegram_id)
+        await update.message.reply_text("Erro ao acessar liga VIP. Tente novamente.")
+        return
+
+    if not row:
+        await update.message.reply_text("Nenhum jogo agendado encontrado.")
+        return
+
+    match_date, competition, stage, home_name, away_name = row
+    competition = competition or "FIFA World Cup"
+
+    try:
+        prediction = predict_match(home_name, away_name, match_date.strftime("%Y-%m-%d"), competition)
+    except Exception:
+        logger.exception("predict_match failed: %s vs %s", home_name, away_name)
+        await update.message.reply_text("Erro ao gerar predição VIP.")
+        return
+
+    date_str = match_date.strftime("%d/%m/%Y %H:%M")
+    prob_home = prediction["prob_home"] * 100
+    prob_draw = prediction["prob_draw"] * 100
+    prob_away = prediction["prob_away"] * 100
+
+    msg = (
+        f"🎯 Liga VIP — Copa 2026\n\n"
+        f"Próximo jogo: {home_name} vs {away_name}\n"
+        f"📅 {date_str}\n\n"
+        f"🤖 Modelo:\n"
+        f"🏠 {home_name}: {prob_home:.1f}%\n"
+        f"🤝 Empate: {prob_draw:.1f}%\n"
+        f"✈️ {away_name}: {prob_away:.1f}%\n\n"
+        f"Quer apostar com dados reais por trás?\n"
+        f"👉 {AFFILIATE_LINK}\n\n"
+        f"Entrando pela liga VIP você compete no ranking separado."
+    )
+    await update.message.reply_text(msg)
 </file>
 
 <file path="src/bot/scheduler.py">
@@ -98341,6 +98317,386 @@ date,home_team,away_team,winner,first_shooter
 .env
 </file>
 
+<file path="db/init_db.py">
+import os
+import psycopg2
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS teams (
+    id SERIAL PRIMARY KEY,
+    fifa_code VARCHAR(10) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    elo_rating FLOAT NOT NULL DEFAULT 1500.0,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS matches (
+    id SERIAL PRIMARY KEY,
+    external_id VARCHAR(50) UNIQUE,
+    home_team_id INT REFERENCES teams(id),
+    away_team_id INT REFERENCES teams(id),
+    match_date TIMESTAMP NOT NULL,
+    stage VARCHAR(50),
+    home_score INT,
+    away_score INT,
+    status VARCHAR(20) DEFAULT 'SCHEDULED',
+    competition VARCHAR(100)
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id SERIAL PRIMARY KEY,
+    match_id INT REFERENCES matches(id),
+    prob_home FLOAT NOT NULL,
+    prob_draw FLOAT NOT NULL,
+    prob_away FLOAT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    telegram_id BIGINT UNIQUE NOT NULL,
+    username VARCHAR(100),
+    points INT DEFAULT 0,
+    is_vip BOOLEAN DEFAULT FALSE,
+    joined_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS guesses (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    match_id INT REFERENCES matches(id),
+    guessed_home_score INT NOT NULL,
+    guessed_away_score INT NOT NULL,
+    points_earned INT DEFAULT 0,
+    UNIQUE(user_id, match_id)
+);
+
+CREATE TABLE IF NOT EXISTS daily_missions (
+    id SERIAL PRIMARY KEY,
+    match_id INT REFERENCES matches(id),
+    question TEXT NOT NULL,
+    correct_answer TEXT,
+    bonus_points INT DEFAULT 5
+);
+
+CREATE TABLE IF NOT EXISTS mission_answers (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    mission_id INT REFERENCES daily_missions(id),
+    answer TEXT NOT NULL,
+    is_correct BOOLEAN,
+    UNIQUE(user_id, mission_id)
+);
+"""
+
+
+def init_db():
+    url = os.environ["DATABASE_URL"]
+    try:
+        conn = psycopg2.connect(url)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(SCHEMA)
+        cur.close()
+        conn.close()
+        print("✅ Schema criado")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    init_db()
+</file>
+
+<file path="src/betting/value_detector.py">
+import logging
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "model"))
+
+from predictor import predict_match
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+
+def detect_value(
+    home_team: str,
+    away_team: str,
+    match_date: str,
+    odd_home: float,
+    odd_draw: float,
+    odd_away: float,
+) -> dict:
+    try:
+        prediction = predict_match(home_team, away_team, match_date)
+    except Exception:
+        logger.exception("predict_match failed: %s vs %s", home_team, away_team)
+        raise
+
+    prob_home = prediction["prob_home"]
+    prob_draw = prediction["prob_draw"]
+    prob_away = prediction["prob_away"]
+
+    implied_home = 1.0 / odd_home
+    implied_draw = 1.0 / odd_draw
+    implied_away = 1.0 / odd_away
+
+    edge_home = round(prob_home - implied_home, 4)
+    edge_draw = round(prob_draw - implied_draw, 4)
+    edge_away = round(prob_away - implied_away, 4)
+
+    edges = {"home": edge_home, "draw": edge_draw, "away": edge_away}
+    value_edges = {k: v for k, v in edges.items() if v > 0.05}
+    is_value_bet = bool(value_edges)
+    value_outcome = max(value_edges, key=value_edges.get) if value_edges else None
+
+    return {
+        "home_team": home_team,
+        "away_team": away_team,
+        "prob_home": prob_home,
+        "prob_draw": prob_draw,
+        "prob_away": prob_away,
+        "odd_home": odd_home,
+        "odd_draw": odd_draw,
+        "odd_away": odd_away,
+        "edge_home": edge_home,
+        "edge_draw": edge_draw,
+        "edge_away": edge_away,
+        "is_value_bet": is_value_bet,
+        "value_outcome": value_outcome,
+    }
+
+
+if __name__ == "__main__":
+    result = detect_value("Brazil", "Argentina", "2026-06-15", 3.20, 3.10, 2.15)
+    print(result)
+    print(f"Value bet: {result['is_value_bet']} → {result['value_outcome']}")
+</file>
+
+<file path="src/bot/bot.py">
+import os
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
+from telegram.ext import ApplicationBuilder, CommandHandler
+
+from handlers.start import start
+from handlers.jogo import jogo
+from handlers.ranking import ranking
+from handlers.palpite import palpite
+from handlers.vip import vip
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    app = ApplicationBuilder().token(token).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("jogo", jogo))
+    app.add_handler(CommandHandler("ranking", ranking))
+    app.add_handler(CommandHandler("palpite", palpite))
+    app.add_handler(CommandHandler("vip", vip))
+    logger.info("Bot starting...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+<file path="src/bot/handlers/jogo.py">
+import os
+import sys
+import logging
+from pathlib import Path
+import psycopg2
+from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import ContextTypes
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "model"))
+from predictor import predict_match
+
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+DB_URL = os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL")
+
+
+async def jogo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        conn = psycopg2.connect(DB_URL)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT ht.name, at.name, m.match_date, m.competition, m.stage
+                FROM matches m
+                JOIN teams ht ON ht.id = m.home_team_id
+                JOIN teams at ON at.id = m.away_team_id
+                WHERE m.match_date > NOW()
+                  AND m.status = 'SCHEDULED'
+                ORDER BY m.match_date ASC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("DB query failed for next scheduled match")
+        await update.message.reply_text("Erro ao buscar próximo jogo. Tente novamente.")
+        return
+
+    if not row:
+        await update.message.reply_text("Nenhum jogo agendado encontrado.")
+        return
+
+    home_name, away_name, match_date, competition, stage = row
+    competition = competition or "FIFA World Cup"
+
+    try:
+        prediction = predict_match(home_name, away_name, match_date.strftime("%Y-%m-%d"), competition)
+    except Exception:
+        logger.exception("predict_match failed: %s vs %s", home_name, away_name)
+        await update.message.reply_text("Erro ao gerar predição.")
+        return
+
+    date_str = match_date.strftime("%d/%m/%Y %H:%M")
+    prob_home = prediction["prob_home"] * 100
+    prob_draw = prediction["prob_draw"] * 100
+    prob_away = prediction["prob_away"] * 100
+    winner = prediction["predicted_winner"]
+
+    msg = (
+        f"Predição: {home_name} x {away_name}\n"
+        f"Data: {date_str}\n\n"
+        f"Casa   {home_name}: {prob_home:.1f}%\n"
+        f"Empate: {prob_draw:.1f}%\n"
+        f"Fora   {away_name}: {prob_away:.1f}%\n\n"
+        f"Favorito: {winner}"
+    )
+    await update.message.reply_text(msg)
+</file>
+
+<file path="src/bot/handlers/palpite.py">
+from telegram import Update
+from telegram.ext import ContextTypes
+
+
+async def palpite(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Em breve: faça seu palpite.")
+</file>
+
+<file path="src/bot/handlers/ranking.py">
+from telegram import Update
+from telegram.ext import ContextTypes
+
+
+async def ranking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Em breve: classificação do bolão.")
+</file>
+
+<file path="src/bot/handlers/start.py">
+import os
+import logging
+import psycopg2
+from pathlib import Path
+from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import ContextTypes
+
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+DB_URL = os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL")
+
+_WELCOME = (
+    "⚽ Copa 2026 Bot\n\n"
+    "Predicões com modelo ML próprio.\n\n"
+    "Comandos:\n"
+    "/jogo — predição do próximo jogo\n"
+    "/palpite — faça seu palpite\n"
+    "/ranking — classificação do bolão\n"
+    "/vip — acesso à liga VIP"
+)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    telegram_id = user.id
+    username = user.username or ""
+    is_vip = bool(context.args)
+
+    try:
+        conn = psycopg2.connect(DB_URL)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO users (telegram_id, username, is_vip)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (telegram_id) DO UPDATE SET
+                    username = EXCLUDED.username,
+                    is_vip = GREATEST(users.is_vip, EXCLUDED.is_vip)
+                """,
+                (telegram_id, username, is_vip),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("DB upsert failed for telegram_id=%s", telegram_id)
+
+    await update.message.reply_text(_WELCOME)
+</file>
+
+<file path="requirements.txt">
+anyio==4.13.0
+APScheduler==3.11.2
+certifi==2026.5.20
+charset-normalizer==3.4.7
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.16
+joblib==1.5.3
+numpy==2.4.6
+pandas==3.0.3
+postgres==4.0
+psycopg2-binary==2.9.12
+psycopg2-pool==1.2
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+python-telegram-bot==22.7
+requests==2.34.2
+scikit-learn==1.8.0
+scipy==1.17.1
+six==1.17.0
+threadpoolctl==3.6.0
+tzdata==2026.2
+tzlocal==5.3.1
+urllib3==2.7.0
+xgboost==3.2.0
+</file>
+
 <file path="src/data/collector.py">
 import os
 import csv
@@ -98349,9 +98705,10 @@ import logging
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -98694,6 +99051,133 @@ def update_live_results():
         conn.close()
 
 
+_WC2026_GROUP_STAGE = [
+    ("WC26-A-1", "Mexico",       "South Africa",  "2026-06-11 19:00:00"),
+    ("WC26-A-2", "South Korea",  "Czechia",        "2026-06-12 02:00:00"),
+    ("WC26-A-3", "Czechia",      "South Africa",   "2026-06-18 16:00:00"),
+    ("WC26-A-4", "Mexico",       "South Korea",    "2026-06-19 01:00:00"),
+    ("WC26-A-5", "Czechia",      "Mexico",         "2026-06-25 01:00:00"),
+    ("WC26-A-6", "South Africa", "South Korea",    "2026-06-25 01:00:00"),
+
+    ("WC26-B-1", "Canada",               "Bosnia and Herzegovina", "2026-06-12 19:00:00"),
+    ("WC26-B-2", "Qatar",                "Switzerland",            "2026-06-13 19:00:00"),
+    ("WC26-B-3", "Switzerland",          "Bosnia and Herzegovina", "2026-06-18 19:00:00"),
+    ("WC26-B-4", "Canada",               "Qatar",                  "2026-06-18 22:00:00"),
+    ("WC26-B-5", "Switzerland",          "Canada",                 "2026-06-24 19:00:00"),
+    ("WC26-B-6", "Bosnia and Herzegovina", "Qatar",                "2026-06-24 19:00:00"),
+
+    ("WC26-C-1", "Brazil",   "Morocco",  "2026-06-13 22:00:00"),
+    ("WC26-C-2", "Haiti",    "Scotland", "2026-06-14 01:00:00"),
+    ("WC26-C-3", "Scotland", "Morocco",  "2026-06-19 22:00:00"),
+    ("WC26-C-4", "Brazil",   "Haiti",    "2026-06-20 01:00:00"),
+    ("WC26-C-5", "Scotland", "Brazil",   "2026-06-24 22:00:00"),
+    ("WC26-C-6", "Morocco",  "Haiti",    "2026-06-24 22:00:00"),
+
+    ("WC26-D-1", "United States", "Paraguay",  "2026-06-13 01:00:00"),
+    ("WC26-D-2", "Australia",     "Turkiye",   "2026-06-14 04:00:00"),
+    ("WC26-D-3", "United States", "Australia", "2026-06-19 19:00:00"),
+    ("WC26-D-4", "Turkiye",       "Paraguay",  "2026-06-20 04:00:00"),
+    ("WC26-D-5", "Turkiye",       "United States", "2026-06-26 02:00:00"),
+    ("WC26-D-6", "Paraguay",      "Australia", "2026-06-26 02:00:00"),
+
+    ("WC26-E-1", "Germany",      "Curacao",      "2026-06-14 17:00:00"),
+    ("WC26-E-2", "Ivory Coast",  "Ecuador",      "2026-06-14 23:00:00"),
+    ("WC26-E-3", "Germany",      "Ivory Coast",  "2026-06-20 20:00:00"),
+    ("WC26-E-4", "Ecuador",      "Curacao",      "2026-06-21 00:00:00"),
+    ("WC26-E-5", "Ecuador",      "Germany",      "2026-06-25 20:00:00"),
+    ("WC26-E-6", "Curacao",      "Ivory Coast",  "2026-06-25 20:00:00"),
+
+    ("WC26-F-1", "Netherlands", "Japan",       "2026-06-14 20:00:00"),
+    ("WC26-F-2", "Sweden",      "Tunisia",     "2026-06-15 02:00:00"),
+    ("WC26-F-3", "Netherlands", "Sweden",      "2026-06-20 17:00:00"),
+    ("WC26-F-4", "Tunisia",     "Japan",       "2026-06-21 04:00:00"),
+    ("WC26-F-5", "Japan",       "Sweden",      "2026-06-25 23:00:00"),
+    ("WC26-F-6", "Tunisia",     "Netherlands", "2026-06-25 23:00:00"),
+
+    ("WC26-G-1", "Iran",        "New Zealand", "2026-06-16 01:00:00"),
+    ("WC26-G-2", "Belgium",     "Egypt",       "2026-06-15 19:00:00"),
+    ("WC26-G-3", "Belgium",     "Iran",        "2026-06-21 19:00:00"),
+    ("WC26-G-4", "New Zealand", "Egypt",       "2026-06-22 01:00:00"),
+    ("WC26-G-5", "Egypt",       "Iran",        "2026-06-27 03:00:00"),
+    ("WC26-G-6", "New Zealand", "Belgium",     "2026-06-27 03:00:00"),
+
+    ("WC26-H-1", "Spain",        "Cape Verde",   "2026-06-15 16:00:00"),
+    ("WC26-H-2", "Saudi Arabia", "Uruguay",      "2026-06-15 22:00:00"),
+    ("WC26-H-3", "Spain",        "Saudi Arabia", "2026-06-21 16:00:00"),
+    ("WC26-H-4", "Uruguay",      "Cape Verde",   "2026-06-21 22:00:00"),
+    ("WC26-H-5", "Cape Verde",   "Saudi Arabia", "2026-06-27 00:00:00"),
+    ("WC26-H-6", "Uruguay",      "Spain",        "2026-06-27 00:00:00"),
+
+    ("WC26-I-1", "France",  "Senegal", "2026-06-16 19:00:00"),
+    ("WC26-I-2", "Iraq",    "Norway",  "2026-06-16 22:00:00"),
+    ("WC26-I-3", "France",  "Iraq",    "2026-06-22 21:00:00"),
+    ("WC26-I-4", "Norway",  "Senegal", "2026-06-23 00:00:00"),
+    ("WC26-I-5", "Norway",  "France",  "2026-06-26 19:00:00"),
+    ("WC26-I-6", "Senegal", "Iraq",    "2026-06-26 19:00:00"),
+
+    ("WC26-J-1", "Argentina", "Algeria",   "2026-06-17 01:00:00"),
+    ("WC26-J-2", "Austria",   "Jordan",    "2026-06-17 04:00:00"),
+    ("WC26-J-3", "Argentina", "Austria",   "2026-06-22 17:00:00"),
+    ("WC26-J-4", "Jordan",    "Algeria",   "2026-06-23 03:00:00"),
+    ("WC26-J-5", "Algeria",   "Austria",   "2026-06-28 02:00:00"),
+    ("WC26-J-6", "Jordan",    "Argentina", "2026-06-28 02:00:00"),
+
+    ("WC26-K-1", "Portugal",                    "Democratic Republic of Congo", "2026-06-17 17:00:00"),
+    ("WC26-K-2", "Uzbekistan",                  "Colombia",                     "2026-06-18 02:00:00"),
+    ("WC26-K-3", "Portugal",                    "Uzbekistan",                   "2026-06-23 17:00:00"),
+    ("WC26-K-4", "Colombia",                    "Democratic Republic of Congo", "2026-06-24 02:00:00"),
+    ("WC26-K-5", "Colombia",                    "Portugal",                     "2026-06-27 23:30:00"),
+    ("WC26-K-6", "Democratic Republic of Congo", "Uzbekistan",                  "2026-06-27 23:30:00"),
+
+    ("WC26-L-1", "England", "Croatia", "2026-06-17 20:00:00"),
+    ("WC26-L-2", "Ghana",   "Panama",  "2026-06-17 23:00:00"),
+    ("WC26-L-3", "England", "Ghana",   "2026-06-23 20:00:00"),
+    ("WC26-L-4", "Panama",  "Croatia", "2026-06-23 23:00:00"),
+    ("WC26-L-5", "Panama",  "England", "2026-06-27 21:00:00"),
+    ("WC26-L-6", "Croatia", "Ghana",   "2026-06-27 21:00:00"),
+]
+
+
+def seed_wc2026_matches() -> int:
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        team_map = _build_team_name_map(cur)
+
+        inserted = 0
+        for ext_id, home_name, away_name, match_date in _WC2026_GROUP_STAGE:
+            home_id = team_map.get(home_name)
+            away_id = team_map.get(away_name)
+
+            if home_id is None:
+                logger.warning("seed_wc2026: team not found in DB: %r", home_name)
+            if away_id is None:
+                logger.warning("seed_wc2026: team not found in DB: %r", away_name)
+
+            cur.execute(
+                """
+                INSERT INTO matches
+                    (external_id, home_team_id, away_team_id, match_date,
+                     stage, status, competition)
+                VALUES (%s, %s, %s, %s, 'GROUP', 'SCHEDULED', 'FIFA World Cup 2026')
+                ON CONFLICT (match_date, home_team_id, away_team_id) DO NOTHING
+                """,
+                (ext_id, home_id, away_id, match_date),
+            )
+            if cur.rowcount > 0:
+                inserted += 1
+
+        conn.commit()
+        cur.close()
+        logger.info("seed_wc2026_matches: %d rows inserted", inserted)
+        return inserted
+    except Exception:
+        logger.exception("seed_wc2026_matches failed")
+        raise
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     init_schema()
     print(f"Kaggle import: {import_kaggle_csv()}")
@@ -98706,9 +99190,10 @@ import os
 import logging
 import unicodedata
 import psycopg2
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -98827,9 +99312,10 @@ import logging
 import psycopg2
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -99192,12 +99678,13 @@ if __name__ == "__main__":
 import logging
 
 import numpy as np
+from pathlib import Path
 from dotenv import load_dotenv
 
 from feature_builder import build_features_for_match
 from trainer import FEATURES, load_model
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -99269,7 +99756,7 @@ from xgboost import XGBClassifier
 
 from feature_builder import build_training_dataset
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -99346,35 +99833,6 @@ def load_model() -> XGBClassifier:
 
 if __name__ == "__main__":
     train_model()
-</file>
-
-<file path="requirements.txt">
-anyio==4.13.0
-APScheduler==3.11.2
-certifi==2026.5.20
-charset-normalizer==3.4.7
-h11==0.16.0
-httpcore==1.0.9
-httpx==0.28.1
-idna==3.16
-joblib==1.5.3
-numpy==2.4.6
-pandas==3.0.3
-postgres==4.0
-psycopg2-binary==2.9.12
-psycopg2-pool==1.2
-python-dateutil==2.9.0.post0
-python-dotenv==1.2.2
-python-telegram-bot==22.7
-requests==2.34.2
-scikit-learn==1.8.0
-scipy==1.17.1
-six==1.17.0
-threadpoolctl==3.6.0
-tzdata==2026.2
-tzlocal==5.3.1
-urllib3==2.7.0
-xgboost==3.2.0
 </file>
 
 </files>
