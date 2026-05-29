@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS matches (
     home_score INT,
     away_score INT,
     status VARCHAR(20) DEFAULT 'SCHEDULED',
-    competition VARCHAR(100)
+    competition VARCHAR(100),
+    results_processed BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS predictions (
