@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("TELEGRAM_API_TOKEN")
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("jogo", jogo))
