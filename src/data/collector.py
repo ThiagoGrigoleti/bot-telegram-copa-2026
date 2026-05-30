@@ -5,9 +5,10 @@ import logging
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -346,6 +347,133 @@ def update_live_results():
         conn.commit()
         logger.info("update_live_results: %d matches updated", updated)
         cur.close()
+    finally:
+        conn.close()
+
+
+_WC2026_GROUP_STAGE = [
+    ("WC26-A-1", "Mexico",       "South Africa",  "2026-06-11 19:00:00"),
+    ("WC26-A-2", "South Korea",  "Czechia",        "2026-06-12 02:00:00"),
+    ("WC26-A-3", "Czechia",      "South Africa",   "2026-06-18 16:00:00"),
+    ("WC26-A-4", "Mexico",       "South Korea",    "2026-06-19 01:00:00"),
+    ("WC26-A-5", "Czechia",      "Mexico",         "2026-06-25 01:00:00"),
+    ("WC26-A-6", "South Africa", "South Korea",    "2026-06-25 01:00:00"),
+
+    ("WC26-B-1", "Canada",               "Bosnia and Herzegovina", "2026-06-12 19:00:00"),
+    ("WC26-B-2", "Qatar",                "Switzerland",            "2026-06-13 19:00:00"),
+    ("WC26-B-3", "Switzerland",          "Bosnia and Herzegovina", "2026-06-18 19:00:00"),
+    ("WC26-B-4", "Canada",               "Qatar",                  "2026-06-18 22:00:00"),
+    ("WC26-B-5", "Switzerland",          "Canada",                 "2026-06-24 19:00:00"),
+    ("WC26-B-6", "Bosnia and Herzegovina", "Qatar",                "2026-06-24 19:00:00"),
+
+    ("WC26-C-1", "Brazil",   "Morocco",  "2026-06-13 22:00:00"),
+    ("WC26-C-2", "Haiti",    "Scotland", "2026-06-14 01:00:00"),
+    ("WC26-C-3", "Scotland", "Morocco",  "2026-06-19 22:00:00"),
+    ("WC26-C-4", "Brazil",   "Haiti",    "2026-06-20 01:00:00"),
+    ("WC26-C-5", "Scotland", "Brazil",   "2026-06-24 22:00:00"),
+    ("WC26-C-6", "Morocco",  "Haiti",    "2026-06-24 22:00:00"),
+
+    ("WC26-D-1", "United States", "Paraguay",  "2026-06-13 01:00:00"),
+    ("WC26-D-2", "Australia",     "Turkiye",   "2026-06-14 04:00:00"),
+    ("WC26-D-3", "United States", "Australia", "2026-06-19 19:00:00"),
+    ("WC26-D-4", "Turkiye",       "Paraguay",  "2026-06-20 04:00:00"),
+    ("WC26-D-5", "Turkiye",       "United States", "2026-06-26 02:00:00"),
+    ("WC26-D-6", "Paraguay",      "Australia", "2026-06-26 02:00:00"),
+
+    ("WC26-E-1", "Germany",      "Curacao",      "2026-06-14 17:00:00"),
+    ("WC26-E-2", "Ivory Coast",  "Ecuador",      "2026-06-14 23:00:00"),
+    ("WC26-E-3", "Germany",      "Ivory Coast",  "2026-06-20 20:00:00"),
+    ("WC26-E-4", "Ecuador",      "Curacao",      "2026-06-21 00:00:00"),
+    ("WC26-E-5", "Ecuador",      "Germany",      "2026-06-25 20:00:00"),
+    ("WC26-E-6", "Curacao",      "Ivory Coast",  "2026-06-25 20:00:00"),
+
+    ("WC26-F-1", "Netherlands", "Japan",       "2026-06-14 20:00:00"),
+    ("WC26-F-2", "Sweden",      "Tunisia",     "2026-06-15 02:00:00"),
+    ("WC26-F-3", "Netherlands", "Sweden",      "2026-06-20 17:00:00"),
+    ("WC26-F-4", "Tunisia",     "Japan",       "2026-06-21 04:00:00"),
+    ("WC26-F-5", "Japan",       "Sweden",      "2026-06-25 23:00:00"),
+    ("WC26-F-6", "Tunisia",     "Netherlands", "2026-06-25 23:00:00"),
+
+    ("WC26-G-1", "Iran",        "New Zealand", "2026-06-16 01:00:00"),
+    ("WC26-G-2", "Belgium",     "Egypt",       "2026-06-15 19:00:00"),
+    ("WC26-G-3", "Belgium",     "Iran",        "2026-06-21 19:00:00"),
+    ("WC26-G-4", "New Zealand", "Egypt",       "2026-06-22 01:00:00"),
+    ("WC26-G-5", "Egypt",       "Iran",        "2026-06-27 03:00:00"),
+    ("WC26-G-6", "New Zealand", "Belgium",     "2026-06-27 03:00:00"),
+
+    ("WC26-H-1", "Spain",        "Cape Verde",   "2026-06-15 16:00:00"),
+    ("WC26-H-2", "Saudi Arabia", "Uruguay",      "2026-06-15 22:00:00"),
+    ("WC26-H-3", "Spain",        "Saudi Arabia", "2026-06-21 16:00:00"),
+    ("WC26-H-4", "Uruguay",      "Cape Verde",   "2026-06-21 22:00:00"),
+    ("WC26-H-5", "Cape Verde",   "Saudi Arabia", "2026-06-27 00:00:00"),
+    ("WC26-H-6", "Uruguay",      "Spain",        "2026-06-27 00:00:00"),
+
+    ("WC26-I-1", "France",  "Senegal", "2026-06-16 19:00:00"),
+    ("WC26-I-2", "Iraq",    "Norway",  "2026-06-16 22:00:00"),
+    ("WC26-I-3", "France",  "Iraq",    "2026-06-22 21:00:00"),
+    ("WC26-I-4", "Norway",  "Senegal", "2026-06-23 00:00:00"),
+    ("WC26-I-5", "Norway",  "France",  "2026-06-26 19:00:00"),
+    ("WC26-I-6", "Senegal", "Iraq",    "2026-06-26 19:00:00"),
+
+    ("WC26-J-1", "Argentina", "Algeria",   "2026-06-17 01:00:00"),
+    ("WC26-J-2", "Austria",   "Jordan",    "2026-06-17 04:00:00"),
+    ("WC26-J-3", "Argentina", "Austria",   "2026-06-22 17:00:00"),
+    ("WC26-J-4", "Jordan",    "Algeria",   "2026-06-23 03:00:00"),
+    ("WC26-J-5", "Algeria",   "Austria",   "2026-06-28 02:00:00"),
+    ("WC26-J-6", "Jordan",    "Argentina", "2026-06-28 02:00:00"),
+
+    ("WC26-K-1", "Portugal",                    "Democratic Republic of Congo", "2026-06-17 17:00:00"),
+    ("WC26-K-2", "Uzbekistan",                  "Colombia",                     "2026-06-18 02:00:00"),
+    ("WC26-K-3", "Portugal",                    "Uzbekistan",                   "2026-06-23 17:00:00"),
+    ("WC26-K-4", "Colombia",                    "Democratic Republic of Congo", "2026-06-24 02:00:00"),
+    ("WC26-K-5", "Colombia",                    "Portugal",                     "2026-06-27 23:30:00"),
+    ("WC26-K-6", "Democratic Republic of Congo", "Uzbekistan",                  "2026-06-27 23:30:00"),
+
+    ("WC26-L-1", "England", "Croatia", "2026-06-17 20:00:00"),
+    ("WC26-L-2", "Ghana",   "Panama",  "2026-06-17 23:00:00"),
+    ("WC26-L-3", "England", "Ghana",   "2026-06-23 20:00:00"),
+    ("WC26-L-4", "Panama",  "Croatia", "2026-06-23 23:00:00"),
+    ("WC26-L-5", "Panama",  "England", "2026-06-27 21:00:00"),
+    ("WC26-L-6", "Croatia", "Ghana",   "2026-06-27 21:00:00"),
+]
+
+
+def seed_wc2026_matches() -> int:
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        team_map = _build_team_name_map(cur)
+
+        inserted = 0
+        for ext_id, home_name, away_name, match_date in _WC2026_GROUP_STAGE:
+            home_id = team_map.get(home_name)
+            away_id = team_map.get(away_name)
+
+            if home_id is None:
+                logger.warning("seed_wc2026: team not found in DB: %r", home_name)
+            if away_id is None:
+                logger.warning("seed_wc2026: team not found in DB: %r", away_name)
+
+            cur.execute(
+                """
+                INSERT INTO matches
+                    (external_id, home_team_id, away_team_id, match_date,
+                     stage, status, competition)
+                VALUES (%s, %s, %s, %s, 'GROUP', 'SCHEDULED', 'FIFA World Cup 2026')
+                ON CONFLICT (match_date, home_team_id, away_team_id) DO NOTHING
+                """,
+                (ext_id, home_id, away_id, match_date),
+            )
+            if cur.rowcount > 0:
+                inserted += 1
+
+        conn.commit()
+        cur.close()
+        logger.info("seed_wc2026_matches: %d rows inserted", inserted)
+        return inserted
+    except Exception:
+        logger.exception("seed_wc2026_matches failed")
+        raise
     finally:
         conn.close()
 
