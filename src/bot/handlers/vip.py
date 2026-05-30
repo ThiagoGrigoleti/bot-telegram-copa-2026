@@ -82,6 +82,8 @@ async def vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"✈️ {away_name}: {prob_away:.1f}%\n\n"
         f"Quer apostar com dados reais por trás?\n"
         f"👉 {AFFILIATE_LINK}\n\n"
-        f"Entrando pela liga VIP você compete no ranking separado."
+        f"Entrando pela liga VIP você compete no ranking separado.\n\n"
+        f"📊 Quer ver o histórico do modelo antes de decidir?\n"
+        f"/stats — acurácia real, sem filtros"
     )
     await update.message.reply_text(msg)

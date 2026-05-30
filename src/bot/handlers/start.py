@@ -17,8 +17,11 @@ _WELCOME = (
     "Predicões com modelo ML próprio.\n\n"
     "Comandos:\n"
     "/jogo — predição do próximo jogo\n"
-    "/palpite — faça seu palpite\n"
+    "/palpite — faça seu palpite no bolão\n"
     "/ranking — classificação do bolão\n"
+    "/favorito — alertas do seu time\n"
+    "/simular — simule a classificação dos grupos\n"
+    "/stats — performance do modelo\n"
     "/vip — acesso à liga VIP"
 )
 
