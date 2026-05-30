@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 from pathlib import Path
-from datetime import time, timezone
+from datetime import datetime, time, timezone
 
 import psycopg2
 from dotenv import load_dotenv
@@ -36,6 +36,58 @@ def _fetch_match_odds(home_name, away_name, match_date):
     except Exception:
         logger.exception("daily_prediction: odds fetch failed: %s vs %s", home_name, away_name)
         return None
+
+
+def _fetch_external_prediction(home_name, away_name, match_date_str):
+    try:
+        from predictions_fetcher import get_external_prediction
+    except Exception:
+        return None
+
+    try:
+        return get_external_prediction(home_name, away_name, match_date_str)
+    except Exception:
+        logger.exception("daily_prediction: external prediction failed: %s vs %s", home_name, away_name)
+        return None
+
+
+def _normalize_winner(name):
+    value = (name or "").strip().lower()
+    if value in ("draw", "empate", "none", ""):
+        return "draw"
+    return value
+
+
+def _build_consensus_block(winner, external, match_date):
+    if not external:
+        return ""
+
+    try:
+        ext_winner = external.get("winner")
+        our_norm = _normalize_winner(winner)
+        ext_norm = _normalize_winner(ext_winner)
+
+        if our_norm == ext_norm:
+            label = "Empate" if our_norm == "draw" else winner
+            return f"✅ Consenso: Modelo próprio + API externa apontam {label}"
+
+        try:
+            now = datetime.now(timezone.utc)
+            md = match_date if match_date.tzinfo else match_date.replace(tzinfo=timezone.utc)
+            hours = max(1, int((md - now).total_seconds() // 3600))
+        except Exception:
+            hours = "algumas"
+
+        our_display = "Empate" if our_norm == "draw" else winner
+        ext_display = "Empate" if ext_norm == "draw" else ext_winner
+
+        return (
+            f"⚠️ Divergência: Nosso modelo → {our_display} | Fonte externa → {ext_display}\n"
+            f"Quem acerta? Resultado em {hours} horas."
+        )
+    except Exception:
+        logger.exception("daily_prediction: consensus block build failed")
+        return ""
 
 
 async def daily_prediction(context) -> None:
@@ -124,16 +176,29 @@ async def daily_prediction(context) -> None:
     prob_away = prediction["prob_away"] * 100
     winner = prediction["predicted_winner"]
 
-    msg = (
-        f"🤖 Predição do dia — {home_name} vs {away_name}\n"
-        f"📅 {date_str}\n\n"
-        f"🏠 {home_name}: {prob_home:.1f}%\n"
-        f"🤝 Empate: {prob_draw:.1f}%\n"
-        f"✈️ {away_name}: {prob_away:.1f}%\n\n"
-        f"Favorito: {winner}\n\n"
-        f"/palpite para registrar seu palpite\n"
-        f"/vip para apostar com dados reais"
-    )
+    external = _fetch_external_prediction(home_name, away_name, match_date.strftime("%Y-%m-%d"))
+    consensus_block = _build_consensus_block(winner, external, match_date)
+
+    lines = [
+        f"🤖 Predição do dia — {home_name} vs {away_name}",
+        f"📅 {date_str}",
+        "",
+        f"🏠 {home_name}: {prob_home:.1f}%",
+        f"🤝 Empate: {prob_draw:.1f}%",
+        f"✈️ {away_name}: {prob_away:.1f}%",
+        "",
+        f"Favorito: {winner}",
+    ]
+
+    if consensus_block:
+        lines.append("")
+        lines.append(consensus_block)
+
+    lines.append("")
+    lines.append("/palpite para registrar seu palpite")
+    lines.append("/vip para apostar com dados reais")
+
+    msg = "\n".join(lines)
 
     try:
         await context.bot.send_message(chat_id=CHANNEL_ID, text=msg)
