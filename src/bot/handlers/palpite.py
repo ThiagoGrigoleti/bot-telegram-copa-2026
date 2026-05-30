@@ -19,7 +19,8 @@ async def palpite(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             cur = conn.cursor()
 
-            sql = """
+            cur.execute(
+                """
                 SELECT m.id, ht.name, at.name, m.match_date, m.stage
                 FROM matches m
                 JOIN teams ht ON ht.id = m.home_team_id
@@ -29,14 +30,8 @@ async def palpite(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ORDER BY m.match_date ASC
                 LIMIT 1
                 """
-            logger.info("Executing palpite query: %s", sql.strip())
-            cur.execute(sql)
+            )
             match_row = cur.fetchone()
-            logger.info("Query result: %s", match_row)
-
-            cur.execute("SELECT NOW(), current_setting('TIMEZONE')")
-            db_now, db_tz = cur.fetchone()
-            logger.info("DB NOW()=%s, TIMEZONE=%s", db_now, db_tz)
 
             if not match_row:
                 cur.close()
