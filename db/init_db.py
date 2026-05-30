@@ -89,6 +89,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_team_id INT REFERENCES teams
 
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_posted BOOLEAN DEFAULT FALSE;
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'organic';
+
 DELETE FROM predictions a USING predictions b
 WHERE a.match_id = b.match_id AND a.id < b.id;
 

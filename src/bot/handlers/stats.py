@@ -77,6 +77,11 @@ def _collect_stats() -> dict:
         )
         top_edge = cur.fetchone()
 
+        cur.execute(
+            "SELECT source, COUNT(*) FROM users GROUP BY source ORDER BY COUNT(*) DESC"
+        )
+        sources = cur.fetchall()
+
         cur.close()
     finally:
         conn.close()
@@ -87,11 +92,21 @@ def _collect_stats() -> dict:
         "best_streak": best_streak,
         "value_bets": value_bets,
         "top_edge": top_edge,
+        "sources": sources,
     }
 
 
-def _pre_copa_message() -> str:
-    return (
+def _sources_block(sources: list) -> str:
+    if not sources:
+        return ""
+    lines = ["", "📥 Origens dos usuários:"]
+    for source, count in sources:
+        lines.append(f"• {source}: {count} usuários")
+    return "\n".join(lines)
+
+
+def _pre_copa_message(sources: list) -> str:
+    base = (
         "📊 Performance do Modelo — Pré-Copa 2026\n\n"
         "🧪 Backtesting (dados históricos 2000–2024):\n"
         "🎯 24.944 jogos testados\n"
@@ -102,6 +117,7 @@ def _pre_copa_message() -> str:
         f"🔗 Dashboard: {DASHBOARD_URL}\n\n"
         "Acurácia em tempo real a partir de 11/06"
     )
+    return base + _sources_block(sources)
 
 
 def _live_message(stats: dict) -> str:
@@ -126,6 +142,11 @@ def _live_message(stats: dict) -> str:
 
     lines.append("")
     lines.append(f"🔗 Histórico completo: {DASHBOARD_URL}")
+
+    sources_block = _sources_block(stats["sources"])
+    if sources_block:
+        lines.append(sources_block)
+
     return "\n".join(lines)
 
 
@@ -137,5 +158,5 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Erro ao buscar estatísticas. Tente novamente.")
         return
 
-    message = _pre_copa_message() if data["total"] == 0 else _live_message(data)
+    message = _pre_copa_message(data["sources"]) if data["total"] == 0 else _live_message(data)
     await update.message.reply_text(message, disable_web_page_preview=False)
