@@ -9,10 +9,13 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "model"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "bolao"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "betting"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "data"))
 
 from predictor import predict_match
 from scoring import process_match_results
 from elo_engine import calculate_all_elo
+from value_detector import detect_value
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -20,6 +23,19 @@ logger = logging.getLogger(__name__)
 
 DB_URL = os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL")
 CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
+
+
+def _fetch_match_odds(home_name, away_name, match_date):
+    try:
+        from odds_fetcher import get_match_odds
+    except Exception:
+        return None
+
+    try:
+        return get_match_odds(home_name, away_name, match_date)
+    except Exception:
+        logger.exception("daily_prediction: odds fetch failed: %s vs %s", home_name, away_name)
+        return None
 
 
 async def daily_prediction(context) -> None:
@@ -72,6 +88,10 @@ async def daily_prediction(context) -> None:
                 """
                 INSERT INTO predictions (match_id, prob_home, prob_draw, prob_away)
                 VALUES (%s, %s, %s, %s)
+                ON CONFLICT (match_id) DO UPDATE SET
+                    prob_home = EXCLUDED.prob_home,
+                    prob_draw = EXCLUDED.prob_draw,
+                    prob_away = EXCLUDED.prob_away
                 """,
                 (match_id, prediction["prob_home"], prediction["prob_draw"], prediction["prob_away"]),
             )
@@ -82,6 +102,21 @@ async def daily_prediction(context) -> None:
     except Exception:
         logger.exception("daily_prediction: failed to persist prediction for match %s", match_id)
         return
+
+    try:
+        odds = _fetch_match_odds(home_name, away_name, match_date)
+        if odds:
+            detect_value(
+                match_id,
+                home_name,
+                away_name,
+                match_date.strftime("%Y-%m-%d"),
+                odds["odd_home"],
+                odds["odd_draw"],
+                odds["odd_away"],
+            )
+    except Exception:
+        logger.exception("daily_prediction: value detection failed for match %s", match_id)
 
     date_str = match_date.strftime("%d/%m/%Y %H:%M")
     prob_home = prediction["prob_home"] * 100

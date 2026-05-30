@@ -34,7 +34,12 @@ CREATE TABLE IF NOT EXISTS predictions (
     prob_home FLOAT NOT NULL,
     prob_draw FLOAT NOT NULL,
     prob_away FLOAT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
+    edge_home FLOAT,
+    edge_draw FLOAT,
+    edge_away FLOAT,
+    is_value_bet BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(match_id)
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -72,6 +77,23 @@ CREATE TABLE IF NOT EXISTS mission_answers (
     is_correct BOOLEAN,
     UNIQUE(user_id, mission_id)
 );
+
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS edge_home FLOAT;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS edge_draw FLOAT;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS edge_away FLOAT;
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_value_bet BOOLEAN DEFAULT FALSE;
+
+DELETE FROM predictions a USING predictions b
+WHERE a.match_id = b.match_id AND a.id < b.id;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'predictions_match_id_key'
+    ) THEN
+        ALTER TABLE predictions ADD CONSTRAINT predictions_match_id_key UNIQUE (match_id);
+    END IF;
+END $$;
 """
 
 
