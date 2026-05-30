@@ -21,6 +21,7 @@ _WELCOME = (
     "/ranking — classificação do bolão\n"
     "/favorito — alertas do seu time\n"
     "/simular — simule a classificação dos grupos\n"
+    "/missao — missão diária com pontos bônus\n"
     "/stats — performance do modelo\n"
     "/vip — acesso à liga VIP"
 )

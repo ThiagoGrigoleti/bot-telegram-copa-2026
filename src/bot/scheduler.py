@@ -350,6 +350,76 @@ async def notify_favorites(context) -> None:
                 continue
 
 
+async def create_daily_missions(context) -> None:
+    try:
+        conn = psycopg2.connect(DB_URL)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT m.id, ht.name, at.name, m.match_date, m.competition
+                FROM matches m
+                JOIN teams ht ON ht.id = m.home_team_id
+                JOIN teams at ON at.id = m.away_team_id
+                LEFT JOIN daily_missions dm ON dm.match_id = m.id
+                WHERE m.match_date::date = CURRENT_DATE + 1
+                  AND m.status = 'SCHEDULED'
+                  AND dm.id IS NULL
+                ORDER BY m.match_date ASC
+                """
+            )
+            rows = cur.fetchall()
+            cur.close()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("create_daily_missions: DB query failed")
+        return
+
+    for match_id, home_name, away_name, match_date, competition in rows:
+        try:
+            prediction = predict_match(
+                home_name, away_name,
+                match_date.strftime("%Y-%m-%d"),
+                competition or "FIFA World Cup",
+            )
+        except Exception:
+            logger.exception("create_daily_missions: predict_match failed: %s vs %s", home_name, away_name)
+            continue
+
+        correct_answer = prediction["predicted_winner"]
+
+        try:
+            conn = psycopg2.connect(DB_URL)
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT is_value_bet FROM predictions
+                    WHERE match_id = %s
+                    """,
+                    (match_id,),
+                )
+                pred_row = cur.fetchone()
+                bonus_points = 10 if pred_row and pred_row[0] else 5
+
+                cur.execute(
+                    """
+                    INSERT INTO daily_missions (match_id, question, correct_answer, bonus_points)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (match_id, "Quem você acha que vai vencer?", correct_answer, bonus_points),
+                )
+                conn.commit()
+                cur.close()
+            finally:
+                conn.close()
+            logger.info("create_daily_missions: created mission for %s vs %s (bonus=%d)", home_name, away_name, bonus_points)
+        except Exception:
+            logger.exception("create_daily_missions: insert failed for match %s", match_id)
+
+
 async def update_elo(context) -> None:
     try:
         calculate_all_elo()
@@ -567,4 +637,5 @@ def setup_scheduler(application) -> None:
     jq.run_repeating(post_match_result, interval=900, first=180)
     jq.run_repeating(notify_favorites, interval=3600, first=120)
     jq.run_daily(update_elo, time=time(2, 0, tzinfo=timezone.utc))
-    logger.info("Scheduler configured: daily_prediction, process_results, post_match_result, notify_favorites, update_elo")
+    jq.run_daily(create_daily_missions, time=time(8, 0, tzinfo=timezone.utc))
+    logger.info("Scheduler configured: daily_prediction, process_results, post_match_result, notify_favorites, update_elo, create_daily_missions")
