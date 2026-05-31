@@ -17,8 +17,12 @@ _WELCOME = (
     "Predicões com modelo ML próprio.\n\n"
     "Comandos:\n"
     "/jogo — predição do próximo jogo\n"
-    "/palpite — faça seu palpite\n"
+    "/palpite — faça seu palpite no bolão\n"
     "/ranking — classificação do bolão\n"
+    "/favorito — alertas do seu time\n"
+    "/simular — simule a classificação dos grupos\n"
+    "/missao — missão diária com pontos bônus\n"
+    "/stats — performance do modelo\n"
     "/vip — acesso à liga VIP"
 )
 
@@ -27,7 +31,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     telegram_id = user.id
     username = user.username or ""
-    is_vip = bool(context.args)
+    source = context.args[0] if context.args else "organic"
+    is_vip = source == "afiliado" or source.startswith("vip")
 
     try:
         conn = psycopg2.connect(DB_URL)
@@ -35,13 +40,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO users (telegram_id, username, is_vip)
-                VALUES (%s, %s, %s)
+                INSERT INTO users (telegram_id, username, is_vip, source)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (telegram_id) DO UPDATE SET
                     username = EXCLUDED.username,
                     is_vip = GREATEST(users.is_vip, EXCLUDED.is_vip)
                 """,
-                (telegram_id, username, is_vip),
+                (telegram_id, username, is_vip, source),
             )
             conn.commit()
             cur.close()

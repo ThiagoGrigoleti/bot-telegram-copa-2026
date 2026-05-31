@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS matches (
     away_score INT,
     status VARCHAR(20) DEFAULT 'SCHEDULED',
     competition VARCHAR(100),
-    results_processed BOOLEAN DEFAULT FALSE
+    results_processed BOOLEAN DEFAULT FALSE,
+    result_posted BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS predictions (
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(100),
     points INT DEFAULT 0,
     is_vip BOOLEAN DEFAULT FALSE,
+    favorite_team_id INT REFERENCES teams(id),
     joined_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -82,6 +84,12 @@ ALTER TABLE predictions ADD COLUMN IF NOT EXISTS edge_home FLOAT;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS edge_draw FLOAT;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS edge_away FLOAT;
 ALTER TABLE predictions ADD COLUMN IF NOT EXISTS is_value_bet BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_team_id INT REFERENCES teams(id);
+
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS result_posted BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'organic';
 
 DELETE FROM predictions a USING predictions b
 WHERE a.match_id = b.match_id AND a.id < b.id;
