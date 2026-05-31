@@ -52,6 +52,22 @@ def _fetch_external_prediction(home_name, away_name, match_date_str):
         return None
 
 
+def _fetch_lineup_context(home_name, away_name, match_date_str):
+    try:
+        from lineup_fetcher import get_match_lineup, format_lineup_context
+    except Exception:
+        return ""
+
+    try:
+        lineup = get_match_lineup(home_name, away_name, match_date_str)
+        if not lineup:
+            return ""
+        return format_lineup_context(lineup)
+    except Exception:
+        logger.exception("daily_prediction: lineup fetch failed: %s vs %s", home_name, away_name)
+        return ""
+
+
 def _normalize_winner(name):
     value = (name or "").strip().lower()
     if value in ("draw", "empate", "none", ""):
@@ -194,6 +210,11 @@ async def daily_prediction(context) -> None:
     if consensus_block:
         lines.append("")
         lines.append(consensus_block)
+
+    lineup_context = _fetch_lineup_context(home_name, away_name, match_date.strftime("%Y-%m-%d"))
+    if lineup_context:
+        lines.append("")
+        lines.append(lineup_context)
 
     lines.append("")
     lines.append("/palpite para registrar seu palpite")
